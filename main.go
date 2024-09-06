@@ -16,4 +16,10 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Printf("starting crawl of: %s\n", os.Args[1])
+	body, err := getHTML(os.Args[1])
+	if err != nil {
+		fmt.Printf("error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Got body:\n%s", body)
 }
