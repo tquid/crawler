@@ -1,4 +1,4 @@
-module codeberg.org/tquid/crawler
+module github.com/tquid/crawler
 
 go 1.23.0
 
