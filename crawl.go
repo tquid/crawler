@@ -3,22 +3,41 @@ package main
 import (
 	"fmt"
 	"net/url"
-	"os"
+	"sync"
 )
 
-func crawlPage(rawBaseURL, rawCurrentURL string, pages map[string]int) {
-	baseURL, err := url.Parse(rawBaseURL)
-	if err != nil {
-		fmt.Printf("Can't parse base URL '%s', please check it and try again\n", rawBaseURL)
-		os.Exit(1)
+type config struct {
+	pages              map[string]int
+	baseURL            *url.URL
+	mu                 *sync.Mutex
+	concurrencyControl chan struct{}
+	wg                 *sync.WaitGroup
+}
+
+func (cfg *config) addPageVisit(normalizedURL string) (isFirst bool) {
+	cfg.mu.Lock()
+	_, exists := cfg.pages[normalizedURL]
+	if !exists {
+		cfg.pages[normalizedURL] = 1
+	} else {
+		cfg.pages[normalizedURL] += 1
 	}
+	cfg.mu.Unlock()
+	return !exists
+}
+
+func (cfg *config) crawlPage(rawCurrentURL string) {
+	defer cfg.wg.Done()
+	defer func() { <-cfg.concurrencyControl }()
+
+	cfg.concurrencyControl <- struct{}{}
 	currentURL, err := url.Parse(rawCurrentURL)
 	if err != nil {
 		fmt.Printf("Can't parse URL '%s', skipping\n", rawCurrentURL)
 		return
 	}
 	// Avoid crawling all over the internet
-	if baseURL.Hostname() != currentURL.Hostname() {
+	if cfg.baseURL.Hostname() != currentURL.Hostname() {
 		return
 	}
 	key, err := normalizeURL(rawCurrentURL)
@@ -26,13 +45,10 @@ func crawlPage(rawBaseURL, rawCurrentURL string, pages map[string]int) {
 		fmt.Printf("Can't normalize URL '%s', skipping\n", rawCurrentURL)
 		return
 	}
-	value, exists := pages[key]
-	if exists {
-		pages[key] = value + 1
+	isFirst := cfg.addPageVisit(key)
+	if !isFirst {
 		fmt.Printf("Already seen URL %s, skipping\n", rawCurrentURL)
 		return
-	} else {
-		pages[key] = 1
 	}
 	html, err := getHTML(rawCurrentURL)
 	if err != nil {
@@ -40,11 +56,12 @@ func crawlPage(rawBaseURL, rawCurrentURL string, pages map[string]int) {
 		return
 	}
 	fmt.Printf("HTML from %s:\n%s\n", rawCurrentURL, html)
-	urls, err := getURLsFromHTML(html, rawBaseURL)
+	urls, err := getURLsFromHTML(html, cfg.baseURL.String())
 	if err != nil {
 		fmt.Printf("Unable to extract URLs from %s: %v\n", rawCurrentURL, err)
 	}
 	for _, url := range urls {
-		crawlPage(rawBaseURL, url, pages)
+		cfg.wg.Add(1)
+		go cfg.crawlPage(url)
 	}
 }
