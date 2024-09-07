@@ -4,22 +4,33 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"sync"
 )
 
-const concurrencyLimit = 5
-
 func main() {
 	args := os.Args
-	if len(args) < 2 {
-		fmt.Println("no website provided")
+	if len(args) < 4 {
+		fmt.Println("usage: ./crawler <URL> <maxConcurrency> <maxPages>")
 		os.Exit(1)
 	}
-	if len(args) > 2 {
+	if len(args) > 4 {
 		fmt.Println("too many arguments provided")
 		os.Exit(1)
 	}
-	rawBaseURL := os.Args[1]
+	rawBaseURL, maxConcurrencyStr, maxPagesStr := os.Args[1], os.Args[2], os.Args[3]
+
+	maxConcurrency, err := strconv.Atoi(maxConcurrencyStr)
+	if err != nil {
+		fmt.Printf("Can't convert '%s' to number: %v\n", maxConcurrencyStr, err)
+		os.Exit(1)
+	}
+	maxPages, err := strconv.Atoi(maxPagesStr)
+	if err != nil {
+		fmt.Printf("Can't convert '%s' to number: %v\n", maxPagesStr, err)
+		os.Exit(1)
+	}
+
 	baseURL, err := url.Parse(rawBaseURL)
 	if err != nil {
 		fmt.Printf("Can't parse URL %s\n", rawBaseURL)
@@ -27,10 +38,11 @@ func main() {
 	}
 
 	cfg := config{
+		maxPages:           maxPages,
 		pages:              make(map[string]int),
 		baseURL:            baseURL,
 		mu:                 &sync.Mutex{},
-		concurrencyControl: make(chan struct{}, concurrencyLimit),
+		concurrencyControl: make(chan struct{}, maxConcurrency),
 		wg:                 &sync.WaitGroup{},
 	}
 
@@ -38,7 +50,5 @@ func main() {
 	go cfg.crawlPage(rawBaseURL)
 	cfg.wg.Wait()
 
-	for key, value := range cfg.pages {
-		fmt.Printf("%s: %d\n", key, value)
-	}
+	printReport(cfg.pages, rawBaseURL)
 }

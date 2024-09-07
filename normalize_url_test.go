@@ -23,6 +23,11 @@ func TestNormalizeURL(t *testing.T) {
 			inputURL: "https://foo:bar@blog.boot.dev/path",
 			expected: "blog.boot.dev/path",
 		},
+		{
+			name:     "cope with lack of terminal slash",
+			inputURL: "https://blog.boot.dev",
+			expected: "blog.boot.dev",
+		},
 	}
 
 	for i, tc := range tests {

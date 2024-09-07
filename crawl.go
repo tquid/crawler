@@ -7,10 +7,11 @@ import (
 )
 
 type config struct {
-	pages              map[string]int
 	baseURL            *url.URL
-	mu                 *sync.Mutex
 	concurrencyControl chan struct{}
+	maxPages           int
+	mu                 *sync.Mutex
+	pages              map[string]int
 	wg                 *sync.WaitGroup
 }
 
@@ -26,11 +27,22 @@ func (cfg *config) addPageVisit(normalizedURL string) (isFirst bool) {
 	return !exists
 }
 
+func (cfg *config) maxPagesReached() bool {
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
+	return len(cfg.pages) >= cfg.maxPages
+}
+
 func (cfg *config) crawlPage(rawCurrentURL string) {
 	defer cfg.wg.Done()
 	defer func() { <-cfg.concurrencyControl }()
 
 	cfg.concurrencyControl <- struct{}{}
+
+	if cfg.maxPagesReached() {
+		return
+	}
+
 	currentURL, err := url.Parse(rawCurrentURL)
 	if err != nil {
 		fmt.Printf("Can't parse URL '%s', skipping\n", rawCurrentURL)
@@ -40,14 +52,13 @@ func (cfg *config) crawlPage(rawCurrentURL string) {
 	if cfg.baseURL.Hostname() != currentURL.Hostname() {
 		return
 	}
-	key, err := normalizeURL(rawCurrentURL)
+	_, err = normalizeURL(rawCurrentURL)
 	if err != nil {
 		fmt.Printf("Can't normalize URL '%s', skipping\n", rawCurrentURL)
 		return
 	}
-	isFirst := cfg.addPageVisit(key)
+	isFirst := cfg.addPageVisit(rawCurrentURL)
 	if !isFirst {
-		fmt.Printf("Already seen URL %s, skipping\n", rawCurrentURL)
 		return
 	}
 	html, err := getHTML(rawCurrentURL)
@@ -55,7 +66,6 @@ func (cfg *config) crawlPage(rawCurrentURL string) {
 		fmt.Printf("Unable to parse HTML from %s: '%v'\n", rawCurrentURL, err)
 		return
 	}
-	fmt.Printf("HTML from %s:\n%s\n", rawCurrentURL, html)
 	urls, err := getURLsFromHTML(html, cfg.baseURL.String())
 	if err != nil {
 		fmt.Printf("Unable to extract URLs from %s: %v\n", rawCurrentURL, err)

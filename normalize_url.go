@@ -6,6 +6,9 @@ import (
 )
 
 func normalizePath(path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
 	c := []rune(path)
 	if c[len(c)-1] == '/' {
 		return string(c[:len(c)-1]), nil
